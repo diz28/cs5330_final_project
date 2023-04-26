@@ -1,0 +1,126 @@
+import io
+
+import cv2
+import torch
+from torch.utils.data import Dataset, DataLoader
+from torchvision import transforms
+
+# Di Zhang
+# April 22, 2023
+# CS5330 - Computer Vision
+
+from resnet_on_jpg64 import get_data
+from PIL import Image
+import numpy as np
+import random
+import os
+import matplotlib.pyplot as plt
+
+def plot_image(dataset, targets, n_images, truth_or_pred):
+    plt.figure()
+    for i in range(n_images):
+        # set the plot to be 2 by 3
+        plt.subplot(int(n_images / 3), 3, i + 1)
+        # set it to be a tight plot
+        plt.tight_layout()
+        # set a few parameters
+        plt.imshow(dataset[i][0])
+        plt.title("{}: {}".format(truth_or_pred, targets[i]))
+        plt.xticks([])
+        plt.yticks([])
+    plt.show()
+
+
+class CustomDataset(Dataset):
+    def __init__(self, root_dir):
+        self.root_dir = root_dir
+        self.classes = sorted(os.listdir(root_dir))
+        self.class_to_idx = {self.classes[i]: i for i in range(len(self.classes))}
+        self.samples = []
+        for target_class in self.classes:
+            class_dir = os.path.join(root_dir, target_class)
+            if not os.path.isdir(class_dir):
+                continue
+            for root, _, fnames in sorted(os.walk(class_dir)):
+                for fname in sorted(fnames):
+                    path = os.path.join(root, fname)
+                    item = (path, self.class_to_idx[target_class])
+                    self.samples.append(item)
+
+    def __getitem__(self, index):
+        path, target = self.samples[index]
+        # with open(path, 'rb') as f:
+        #     sample_bytes = f.read()
+        # sample_image = Image.open(io.BytesIO(sample_bytes))
+        sample_image = Image.open(path)
+        resized_image = sample_image.resize((64, 64), Image.LANCZOS)
+        sample_np = np.array(resized_image)
+        sample_tensor = torch.from_numpy(sample_np.transpose((2, 0, 1)))
+        return sample_tensor, target
+
+    def __len__(self):
+        return len(self.samples)
+
+
+def load_images(root_dir, batch_size, shuffle=True):
+    file_list = []
+    image_num = -1
+
+    to_tensor = transforms.ToTensor()
+
+    for dirpath, dirnames, filenames in os.walk(root_dir):
+        for filename in filenames:
+            if filename.endswith('.jpg') or filename.endswith('.png'):
+                file_list.append((os.path.join(dirpath, filename), os.path.basename(dirpath), image_num))
+        image_num = image_num + 1
+    if shuffle:
+        random.shuffle(file_list)
+
+    num_files = len(file_list)
+    num_batches = num_files // batch_size
+
+    crop_size = 64
+    transform = transforms.CenterCrop(crop_size)
+    dataset = []
+    for i in range(num_batches):
+        batch_files = file_list[i * batch_size: (i + 1) * batch_size]
+        image_list = []
+        target_list = []
+        for file_path, file_name, image_num in batch_files:
+            image = Image.open(file_path)
+            cropped_image = transform(image)
+            np_image = np.array(cropped_image)
+            #image = torch.tensor(np_image)
+            #image_tensor = to_tensor(np_image)
+            #image_tensor = torch.tensor(np_image)
+            image_list.append(np_image)
+            target_list.append(image_num)
+        tensor_list = torch.tensor(np.array(image_list))
+        print(tensor_list.shape)
+        tensor_list = tensor_list.permute(0, 3, 1, 2)
+        print(tensor_list.shape)
+        dataset.append((tensor_list, target_list))
+
+    return dataset
+
+def main():
+
+    train_dataset = load_images('./log64db/trainset', 32)
+
+    # example_image, example_target = zip(*train_dataset)
+    # # plot the first 6 digit images
+    # plot_image(example_image, example_target, 9, 'Ground Truth')
+
+    # train_dataset = CustomDataset('./original64JPG/trainset')
+    # train_dataloader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+    #
+    examples = enumerate(train_dataset)
+    batch_idx, (example_data, example_targets) = next(examples)
+    print(example_data.shape)
+    print(type(example_data))
+    print(example_data)
+    # plot the first 6 digit images
+    plot_image(example_data, example_targets, 9, 'Ground Truth')
+
+if __name__ == '__main__':
+    main()
